@@ -1,0 +1,44 @@
+# ────────────────── Python ──────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Database files
+*.sqlite3
+*.db
+*.db*
+
+# Tools & caches
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.cache/
+
+# ────────────────── Project secrets ──────────────────
+.env            # Discord token / other private keys
+*.env
+
+# ────────────────── Editors / OS ──────────────────
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ────────────────── Logs ──────────────────
+*.log
