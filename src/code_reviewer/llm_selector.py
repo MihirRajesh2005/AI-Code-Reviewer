@@ -18,12 +18,12 @@ def get_llm(llm_provider: str, llm_model: str, llm_api_key: str | None) -> BaseC
                 )
                 return llm
             except ImportError:
-                print(f"\\nERROR: The integration package for '{llm_provider}' is not installed.")
+                print(f"\nERROR: The integration package for '{llm_provider}' is not installed.")
                 package_name = f"langchain-{llm_provider}"
                 if llm_provider == "gemini":
                     package_name = "langchain-google-genai"
                 print(f"Please install it using: pip install {package_name}")
                 return None
             except Exception as e:
-                print(f"\\nERROR: An error occurred while initializing the model: {e}")
+                print(f"\nERROR: An error occurred while initializing the model: {e}")
                 return None

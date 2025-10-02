@@ -74,11 +74,11 @@ def run():
         print(final_state.get("improvements","No improvements suggested."))
 
     except ConfigurationError as e:
-        print(f"\\nConfiguration Error: {e}")
+        print(f"\nConfiguration Error: {e}")
         print("Please correct the arguments and try again.")
         return
     except Exception as e:
-        print(f"\\nAn unexpected error has occured: {e}")
+        print(f"\nAn unexpected error has occured: {e}")
 
 
 if __name__ == "__main__":
