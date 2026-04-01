@@ -14,7 +14,8 @@ name = "ai-code-reviewer"
 version = "0.1.0"
 dependencies = [
     "langchain",
-    "langgraph"
+    "langgraph",
+    "pydantic"
 ]
 
 [project.scripts]

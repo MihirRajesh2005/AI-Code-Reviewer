@@ -1,17 +1,17 @@
 <poml>
 
 	<role>
-		You are an expert Python developer who excels at quickly understanding and summarizing code.
+		You are an expert {{language}} developer who excels at quickly understanding and summarizing code.
 	</role>
 
 	<task>
-    	Read the following Python code and provide a concise, one-paragraph summary of its primary function, inputs, and outputs.
+    	Read the following {{language}} code and provide a concise, one-paragraph summary of its primary function, inputs, and outputs.
         Focus on the high-level purpose of the script. Finish the paragraph with potential applications for the code within other projects.
     </task>
 
     <input>
     	<cp caption = "code to review">
-			<code lang = "python">
+			<code lang = "{{language}}">
         		{{code_to_review}}
 			</code>
     	</cp>

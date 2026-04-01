@@ -1,65 +1,161 @@
 import importlib.resources
+import json
 from langchain_core.language_models import BaseChatModel
-from typing import Dict, Any
+from pydantic import BaseModel
+from typing import Dict, Any, List
+
+
+# ---------------------------------------------------------------------------
+# Prompt loader
+# ---------------------------------------------------------------------------
 
 def load_and_format_poml(file: str, **kwargs) -> str:
     prompt_path = importlib.resources.files('code_reviewer.prompts').joinpath(f"{file}.poml")
     try:
-        with open (prompt_path, "r") as f:
+        with open(prompt_path, "r") as f:
             template = f.read()
-        
+
         for key, value in kwargs.items():
-            template = template.replace(f"{{{{{key}}}}}", str(value))
-        
+            template = template.replace(f"{{{{{key}}}}}", str(value) if value is not None else "")
+
         return template
-    
+
     except FileNotFoundError:
         print(f"ERROR: Prompt file not found at {prompt_path}")
         return ""
 
 
-def summariser_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, str]:
+# ---------------------------------------------------------------------------
+# Structured output schemas
+# ---------------------------------------------------------------------------
+
+class Finding(BaseModel):
+    description: str
+    severity: str   # "critical" | "major" | "minor"
+    location: str
+    suggestion: str
+
+class FindingList(BaseModel):
+    findings: List[Finding]
+
+
+def _findings_to_text(findings: List[Finding]) -> str:
+    """Serialize findings to a readable string for use in downstream prompts."""
+    if not findings:
+        return "None found."
+    lines = []
+    for i, f in enumerate(findings, 1):
+        lines.append(
+            f"{i}. [{f.severity.upper()}] {f.description} "
+            f"(at: {f.location}) — Suggestion: {f.suggestion}"
+        )
+    return "\n".join(lines)
+
+
+def _parse_structured(llm: BaseChatModel, prompt: str) -> List[Finding]:
+    """Invoke LLM with structured output, falling back to JSON parse on failure."""
+    try:
+        structured_llm = llm.with_structured_output(FindingList)
+        result: FindingList = structured_llm.invoke(prompt)
+        return result.findings
+    except Exception:
+        # Fallback: try parsing raw JSON from plain invocation
+        try:
+            raw = llm.invoke(prompt).content
+            data = json.loads(raw)
+            return [Finding(**item) for item in data.get("findings", [])]
+        except Exception:
+            return []
+
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+def summariser_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
     print("Summariser agent working...")
-    code  = state["code_to_review"]
-    prompt = load_and_format_poml("summariser", code_to_review=code)
+    code = state["code_to_review"]
+    language = state.get("language", "Python")
+    prompt = load_and_format_poml("summariser", code_to_review=code, language=language)
     if not prompt:
         return {}
     response = llm.invoke(prompt)
     print("Summariser agent finished.")
-    return {"summary":response.content}
+    return {"summary": response.content}
 
-def error_detector_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, str]:
+
+def error_detector_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
     print("Error detection in progress...")
     code = state["code_to_review"]
+    language = state.get("language", "Python")
+    custom_rules = state.get("custom_rules", "")
     summary = state.get("summary", "No summary was provided")
-    prompt = load_and_format_poml("error_detector", code_to_review=code, summary=summary)
+    prompt = load_and_format_poml(
+        "error_detector",
+        code_to_review=code,
+        language=language,
+        summary=summary,
+        custom_rules=custom_rules,
+    )
     if not prompt:
         return {}
-    response = llm.invoke(prompt)
+    findings = _parse_structured(llm, prompt)
+    has_critical = any(f.severity == "critical" for f in findings)
     print("Error detection finished.")
-    return {"errors":response.content}
+    return {
+        "errors": _findings_to_text(findings),
+        "error_findings": [f.model_dump() for f in findings],
+        "has_critical": has_critical,
+    }
 
-def bug_detector_agent(state: Dict[str,Any], llm: BaseChatModel) -> Dict[str, str]:
+
+def bug_detector_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
     print("Bug identification in progress...")
     code = state["code_to_review"]
+    language = state.get("language", "Python")
     summary = state.get("summary", "")
-    errors = state.get("errors","No errors were found")
-    prompt = load_and_format_poml("bug_detector", code_to_reviewer=code, summary=summary, errors=errors)
+    errors = state.get("errors", "No errors were found")
+    prompt = load_and_format_poml(
+        "bug_detector",
+        code_to_review=code,
+        language=language,
+        summary=summary,
+        errors=errors,
+    )
     if not prompt:
         return {}
-    response = llm.invoke(prompt)
+    findings = _parse_structured(llm, prompt)
+    has_critical = state.get("has_critical", False) or any(f.severity == "critical" for f in findings)
     print("Bug identification finished.")
-    return {"bugs":response.content}
+    return {
+        "bugs": _findings_to_text(findings),
+        "bug_findings": [f.model_dump() for f in findings],
+        "has_critical": has_critical,
+    }
 
-def improvements_agent(state: Dict[str,Any], llm: BaseChatModel) -> Dict[str, str]:
+
+def improvements_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
     print("Generating improvement suggestions...")
     code = state["code_to_review"]
-    summary = state.get("summary", )
-    errors = state.get("errors","")
+    language = state.get("language", "Python")
+    custom_rules = state.get("custom_rules", "")
+    summary = state.get("summary", "")
+    errors = state.get("errors", "")
     bugs = state.get("bugs", "No bugs were identified")
-    prompt = load_and_format_poml("improvements", code_to_reviewer=code, summary=summary, errors=errors, bugs=bugs)
+    prompt = load_and_format_poml(
+        "improvements",
+        code_to_review=code,
+        language=language,
+        summary=summary,
+        errors=errors,
+        bugs=bugs,
+        custom_rules=custom_rules,
+    )
     if not prompt:
         return {}
-    response = llm.invoke(prompt)
+    findings = _parse_structured(llm, prompt)
     print("Suggestions generated.")
-    return {"improvements": response.content}
+    return {
+        "improvements": _findings_to_text(findings),
+        "improvement_findings": [f.model_dump() for f in findings],
+    }

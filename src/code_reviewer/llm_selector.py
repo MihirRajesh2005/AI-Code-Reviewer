@@ -1,14 +1,18 @@
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
-def get_llm(llm_provider: str, llm_model: str, llm_api_key: str | None) -> BaseChatModel:
+def get_llm(llm_provider: str, llm_model: str, llm_api_key: str | None,
+            ollama_base_url: str = "http://localhost:11434",
+            openai_base_url: str | None = None) -> BaseChatModel:
             kwargs = {}
             if llm_provider == "ollama":
-                pass
+                kwargs["base_url"] = ollama_base_url
             elif llm_provider == "gemini":
                 kwargs["google_api_key"] = llm_api_key
             else:
                 kwargs["api_key"] = llm_api_key
+                if llm_provider == "openai" and openai_base_url:
+                    kwargs["base_url"] = openai_base_url
             
             try:
                 llm = init_chat_model(
