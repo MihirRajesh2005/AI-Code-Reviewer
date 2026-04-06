@@ -1,4 +1,5 @@
 import json
+from code_reviewer.console import console
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 from typing import Dict, Any, List
@@ -24,7 +25,7 @@ def fixer_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
     filtered = [f for f in all_findings if SEVERITY_ORDER.get(f.get("severity", "minor"), 2) <= threshold]
 
     if not filtered:
-        print("Fixer: no findings to fix at the selected severity level.")
+        console.print("Fixer: no findings to fix at the selected severity level.", style="status")
         return {"patched_code": code, "changes_made": []}
 
     issues_lines = []
@@ -35,7 +36,7 @@ def fixer_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
         )
     issues_to_fix = "\n".join(issues_lines)
 
-    print(f"Fixer agent working on {len(filtered)} issue(s)...")
+    console.print(f"Fixer agent working on {len(filtered)} issue(s)...", style="status")
     prompt = load_and_format_poml(
         "fixer",
         code_to_review=code,
@@ -58,8 +59,8 @@ def fixer_agent(state: Dict[str, Any], llm: BaseChatModel) -> Dict[str, Any]:
             patched_code = data.get("patched_code", code)
             changes_made = data.get("changes_made", [])
         except Exception:
-            print("Fixer: failed to parse response, returning original code.")
+            console.print("Fixer: failed to parse response, returning original code.", style="error")
             return {"patched_code": code, "changes_made": []}
 
-    print("Fixer agent finished.")
+    console.print("Fixer agent finished.", style="status")
     return {"patched_code": patched_code, "changes_made": changes_made}

@@ -1,3 +1,4 @@
+from code_reviewer.console import console
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
@@ -22,12 +23,12 @@ def get_llm(llm_provider: str, llm_model: str, llm_api_key: str | None,
                 )
                 return llm
             except ImportError:
-                print(f"\nERROR: The integration package for '{llm_provider}' is not installed.")
+                console.print(f"\nERROR: The integration package for '{llm_provider}' is not installed.", style="error")
                 package_name = f"langchain-{llm_provider}"
                 if llm_provider == "gemini":
                     package_name = "langchain-google-genai"
-                print(f"Please install it using: pip install {package_name}")
+                console.print(f"Please install it using: pip install {package_name}")
                 return None
             except Exception as e:
-                print(f"\nERROR: An error occurred while initializing the model: {e}")
+                console.print(f"\nERROR: An error occurred while initializing the model: {e}", style="error")
                 return None

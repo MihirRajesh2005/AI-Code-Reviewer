@@ -15,7 +15,8 @@ version = "0.1.0"
 dependencies = [
     "langchain",
     "langgraph",
-    "pydantic"
+    "pydantic",
+    "rich"
 ]
 
 [project.scripts]

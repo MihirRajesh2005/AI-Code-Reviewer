@@ -1,5 +1,6 @@
 import argparse
 import sys
+from code_reviewer.console import console, SEVERITY_STYLE
 from code_reviewer.language_detector import detect_language, validate_language
 from code_reviewer.llm_selector import get_llm
 from code_reviewer.reviewer_agents import (
@@ -11,6 +12,11 @@ from code_reviewer.reviewer_agents import (
 from code_reviewer.utils import get_api_key, get_model, get_provider, ConfigurationError
 from functools import partial
 from langgraph.graph import END, StateGraph
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.syntax import Syntax
+from rich.table import Table
 from typing import TypedDict, List, Dict, Any
 
 SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
@@ -45,20 +51,25 @@ def _filter_findings(findings: List[Dict], min_severity: str) -> List[Dict]:
 
 def _print_findings(label: str, findings: List[Dict], min_severity: str) -> None:
     filtered = _filter_findings(findings, min_severity)
-    print(f"\n{label}:")
+    console.print(f"\n[heading]{label}[/heading]")
     if not filtered:
-        print("  None found.")
+        console.print("  [dim]None found.[/dim]")
         return
+    table = Table(show_header=True, header_style="bold", expand=True)
+    table.add_column("Severity", width=10)
+    table.add_column("Description", ratio=3)
+    table.add_column("Location", ratio=1)
+    table.add_column("Suggestion", ratio=2)
     for f in filtered:
         sev = f.get("severity", "minor").upper()
-        loc = f.get("location", "")
-        desc = f.get("description", "")
-        sug = f.get("suggestion", "")
-        print(f"  [{sev}] {desc}")
-        if loc:
-            print(f"         Location : {loc}")
-        if sug:
-            print(f"         Suggestion: {sug}")
+        style = SEVERITY_STYLE.get(sev, "")
+        table.add_row(
+            f"[{style}]{sev}[/{style}]",
+            f.get("description", ""),
+            f.get("location", ""),
+            f.get("suggestion", ""),
+        )
+    console.print(table)
 
 
 def _build_workflow(code_reviewer_model, use_fixer: bool):
@@ -89,10 +100,10 @@ def _review_file(file_path: str, code_reviewer_model, args) -> Dict[str, Any]:
     """Run the full review pipeline on a single file. Returns final_state."""
     with open(file_path, "r", encoding="utf-8") as f:
         code_to_review = f.read()
-    print(f"Successfully read {len(code_to_review.splitlines())} lines of code.")
+    console.print(f"Successfully read {len(code_to_review.splitlines())} lines of code.", style="status")
 
     language = validate_language(args.lang) if args.lang else detect_language(file_path)
-    print(f"Language: {language}")
+    console.print(f"Language: {language}", style="status")
 
     custom_rules = ""
     if args.rules:
@@ -114,9 +125,9 @@ def _review_file(file_path: str, code_reviewer_model, args) -> Dict[str, Any]:
         "changes_made": [],
     }
 
-    print("Starting code review pipeline...")
+    console.print("Starting code review pipeline...", style="status")
     final_state = app.invoke(initial_state)
-    print("Pipeline executed.\n")
+    console.print("Pipeline executed.\n", style="status")
     return final_state
 
 
@@ -172,12 +183,12 @@ def run():
         model = get_model(args.model)
         api_key = get_api_key(provider=provider)
 
-        print(f"Using provider {provider} and model {model}.")
+        console.print(f"Using provider [info]{provider}[/info] and model [info]{model}[/info].")
 
         if args.rules:
-            print(f"Loading custom rules from {args.rules}...")
+            console.print(f"Loading custom rules from {args.rules}...", style="status")
 
-        print(f"Initialising model {model}...")
+        console.print(f"Initialising model {model}...", style="status")
         code_reviewer_model = get_llm(
             llm_provider=provider,
             llm_model=model,
@@ -185,7 +196,7 @@ def run():
             ollama_base_url=args.ollama_url,
             openai_base_url=args.base_url,
         )
-        print("Model initialised successfully.")
+        console.print("Model initialised successfully.", style="success")
 
         # ---------------------------------------------------------------
         # Multi-file mode
@@ -195,10 +206,10 @@ def run():
 
             files = list(walk_supported_files(args.dir, language_filter=args.lang))
             if not files:
-                print(f"No supported source files found in {args.dir}")
+                console.print(f"No supported source files found in {args.dir}", style="error")
                 return
 
-            print(f"Found {len(files)} file(s) to review in {args.dir}\n")
+            console.print(f"Found [info]{len(files)}[/info] file(s) to review in {args.dir}\n")
 
             aggregate = {
                 "files_reviewed": 0,
@@ -210,9 +221,7 @@ def run():
             any_critical = False
 
             for file_path in files:
-                print(f"\n{'='*60}")
-                print(f"Reviewing: {file_path}")
-                print(f"{'='*60}")
+                console.print(Rule(f"Reviewing: {file_path}", style="info"))
                 final_state = _review_file(file_path, code_reviewer_model, args)
 
                 all_findings = (
@@ -245,20 +254,31 @@ def run():
                                 patched.splitlines(keepends=True),
                                 fromfile=f"a/{file_path}", tofile=f"b/{file_path}",
                             ))
-                            print("".join(diff) if diff else "No changes.")
+                            if diff:
+                                diff_text = "".join(diff)
+                                console.print(Panel(
+                                    Syntax(diff_text, "diff", theme="monokai"),
+                                    title="Proposed Patch",
+                                    border_style="yellow",
+                                ))
+                            else:
+                                console.print("[dim]No changes.[/dim]")
                         else:
                             with open(file_path, "w", encoding="utf-8") as f:
                                 f.write(patched)
-                            print(f"Patched: {file_path}")
+                            console.print(f"Patched: {file_path}", style="success")
 
                 _print_findings("Errors", final_state.get("error_findings", []), args.min_severity)
                 _print_findings("Bugs", final_state.get("bug_findings", []), args.min_severity)
                 _print_findings("Improvements", final_state.get("improvement_findings", []), args.min_severity)
 
-            print(f"\n{'='*60}")
-            print(f"AGGREGATE SUMMARY — {aggregate['files_reviewed']} files reviewed")
-            print(f"  Critical: {aggregate['total_critical']}  Major: {aggregate['total_major']}  Minor: {aggregate['total_minor']}")
-            print(f"{'='*60}")
+            agg_text = (
+                f"[bold]Files reviewed:[/bold] {aggregate['files_reviewed']}\n"
+                f"[severity.critical]Critical: {aggregate['total_critical']}[/severity.critical]  "
+                f"[severity.major]Major: {aggregate['total_major']}[/severity.major]  "
+                f"[severity.minor]Minor: {aggregate['total_minor']}[/severity.minor]"
+            )
+            console.print(Panel(agg_text, title="Aggregate Summary", border_style="bold"))
 
             if any_critical:
                 sys.exit(1)
@@ -267,11 +287,11 @@ def run():
         # ---------------------------------------------------------------
         # Single-file mode
         # ---------------------------------------------------------------
-        print(f"Starting review for {args.file}...")
+        console.print(f"Starting review for [info]{args.file}[/info]...")
         final_state = _review_file(args.file, code_reviewer_model, args)
 
-        print("\nSummary:")
-        print(final_state.get("summary", "No summary generated"))
+        summary_text = final_state.get("summary", "No summary generated")
+        console.print(Panel(Markdown(summary_text), title="Summary", border_style="green"))
 
         _print_findings("Errors", final_state.get("error_findings", []), args.min_severity)
         _print_findings("Bugs", final_state.get("bug_findings", []), args.min_severity)
@@ -289,26 +309,36 @@ def run():
                 fromfile=f"a/{args.file}", tofile=f"b/{args.file}"
             ))
             if args.dry_run:
-                print("\n--- Proposed patch ---")
-                print("".join(diff) if diff else "No changes.")
+                if diff:
+                    diff_text = "".join(diff)
+                    console.print(Panel(
+                        Syntax(diff_text, "diff", theme="monokai"),
+                        title="Proposed Patch",
+                        border_style="yellow",
+                    ))
+                else:
+                    console.print("[dim]No changes.[/dim]")
             else:
                 with open(args.file, "w", encoding="utf-8") as f:
                     f.write(final_state["patched_code"])
-                print(f"\nFile patched: {args.file}")
+                console.print(f"\nFile patched: {args.file}", style="success")
                 if final_state.get("changes_made"):
-                    print("Changes made:")
+                    console.print("[bold]Changes made:[/bold]")
                     for change in final_state["changes_made"]:
-                        print(f"  - {change}")
+                        console.print(f"  - {change}")
 
         if final_state.get("has_critical"):
             sys.exit(1)
 
     except ConfigurationError as e:
-        print(f"\nConfiguration Error: {e}")
-        print("Please correct the arguments and try again.")
+        console.print(Panel(
+            f"{e}\n\nPlease correct the arguments and try again.",
+            title="Configuration Error",
+            border_style="red",
+        ))
         return
     except Exception as e:
-        print(f"\nAn unexpected error has occurred: {e}")
+        console.print(f"\nAn unexpected error has occurred: {e}", style="error")
         raise
 
 
